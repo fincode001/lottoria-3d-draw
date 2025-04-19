@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>로또리아 3D 추첨기</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; color: white; font-family: sans-serif; }
+    #startBtn {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      padding: 10px 20px;
+      font-size: 18px;
+      background: gold;
+      color: black;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body>
+  <button id="startBtn">🎬 추첨 시작</button>
+  <script type="module">
+    import * as THREE from 'https://cdn.skypack.dev/three@0.150.1';
+    import * as CANNON from 'https://cdn.skypack.dev/cannon-es';
+
+    let scene, camera, renderer, world;
+    const balls = [];
+    const drawn = [];
+    const drawPositions = [
+      [-5, 2, 0], [-3, 2, 0], [-1, 2, 0], [1, 2, 0], [3, 2, 0], [5, 2, 0]
+    ];
+
+    init();
+    animate();
+
+    function init() {
+      scene = new THREE.Scene();
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 100);
+      camera.position.set(0, 10, 20);
+
+      renderer = new THREE.WebGLRenderer();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.body.appendChild(renderer.domElement);
+
+      const ambient = new THREE.AmbientLight(0x888888);
+      scene.add(ambient);
+      const light = new THREE.PointLight(0xffffff, 1, 100);
+      light.position.set(0, 20, 10);
+      scene.add(light);
+
+      world = new CANNON.World({ gravity: new CANNON.Vec3(0, -30, 0) });
+
+      const ground = new CANNON.Body({
+        shape: new CANNON.Plane(),
+        mass: 0
+      });
+      ground.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+      world.addBody(ground);
+
+      const cylinder = new THREE.Mesh(
+        new THREE.CylinderGeometry(6, 6, 10, 32, 1, true),
+        new THREE.MeshStandardMaterial({ color: 0x2222aa, side: THREE.DoubleSide, wireframe: false })
+      );
+      cylinder.position.y = 5;
+      scene.add(cylinder);
+
+      for (let i = 1; i <= 45; i++) {
+        const radius = 0.5;
+        const geometry = new THREE.SphereGeometry(radius, 32, 32);
+        const canvas = document.createElement('canvas');
+        canvas.width = 64; canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = 'yellow';
+        ctx.beginPath();
+        ctx.arc(32, 32, 30, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'black';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(i.toString(), 32, 36);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.MeshStandardMaterial({ map: texture });
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.position.set((Math.random() - 0.5) * 5, 5 + Math.random() * 5, (Math.random() - 0.5) * 5);
+        scene.add(mesh);
+
+        const body = new CANNON.Body({ mass: 1, shape: new CANNON.Sphere(radius) });
+        body.position.copy(mesh.position);
+        world.addBody(body);
+
+        balls.push({ mesh, body, number: i });
+      }
+
+      document.getElementById('startBtn').onclick = () => drawBalls();
+    }
+
+    function drawBalls() {
+      let drawnCount = 0;
+      const drawInterval = setInterval(() => {
+        if (drawnCount >= 6) return clearInterval(drawInterval);
+        const candidates = balls.filter(b => !drawn.includes(b.number));
+        const ball = candidates[Math.floor(Math.random() * candidates.length)];
+        ball.body.applyImpulse(new CANNON.Vec3(0, 30, 0), ball.body.position);
+        drawn.push(ball.number);
+
+        setTimeout(() => {
+          ball.body.type = CANNON.Body.STATIC;
+          ball.body.position.set(...drawPositions[drawnCount]);
+          ball.body.velocity.set(0, 0, 0);
+          ball.body.angularVelocity.set(0, 0, 0);
+          ball.mesh.position.copy(ball.body.position);
+
+          playVoice(ball.number, drawnCount + 1);
+        }, 1000);
+        drawnCount++;
+      }, 2000);
+    }
+
+    function playVoice(number, order) {
+      const intro = new Audio(`audio/intro${order}.mp3`);
+      const numberAudio = new Audio(`audio/${number}.mp3`);
+      intro.onended = () => numberAudio.play();
+      intro.play();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      world.step(1/60);
+      balls.forEach(({ mesh, body }) => {
+        mesh.position.copy(body.position);
+        mesh.quaternion.copy(body.quaternion);
+      });
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>
